@@ -1,0 +1,45 @@
+# dynatrace oneagent install on linux. Extra variables defined:
+# hosts_group -> inventory group of hosts to execute playbook on
+# dt_api_endpoint -> dynatrace environment api endpoint (include trailing /)
+# dt_user -> Specifies the name of the non-privileged user, to operate the oneagent processes
+# dt_group-> Specifies the group of the non-privileged user, to operate the oneagent processes
+# install_path -> Parameter allows installation to a different directory. Destination folder by default /opt/dynatrace/oneagent
+# dt_api_token -> dynatrace api install token
+# dt_host_group -> dynatrace host group name
+# dt_app_log_content_access -> flag to enable or disable log analytics on host (0 or 1)
+# dt_infra_only -> flag to set cloud infrastructure monitoring mode on host (0 or 1)
+---
+-
+  hosts: "{{ hosts_group }}"
+  name: "dynatrace oneagent install on linux"
+  tasks:
+    -
+      name: "validate ansible tower execution on linux with sudo access"
+      shell:
+        cmd: pbrun bash ls /opt
+    -
+      name: "check if oneagent is already installed"
+      stat:
+        path: /opt/dynatrace/oneagent/agent/lib64/liboneagentos.so
+      register: installed
+    -
+      name: "download oneagent install file"
+      get_url:
+        url: "{{ dt_api_endpoint }}deployment/installer/agent/unix/default/latest?Api-Token={{ dt_api_token }}&arch=x86&flavor=default"
+        dest: /tmp/dynatrace-oneagent-linux-latest.sh
+        mode: '0777'
+    -
+      name: "install: execute oneagent install file with root privileges"
+      shell: >
+        pbrun bash /tmp/dynatrace-oneagent-linux-latest.sh --set-host-name={{ inventory_hostname }}
+        {% if dt_host_group is defined %} --set-host-group={{ dt_host_group }}{% endif %}
+        {% if dt_infra_only is defined %} --set-infra-only={{ dt_infra_only }}{% endif %}
+        {% if dt_app_log_content_access is defined %} --set-app-log-content-access={{ dt_app_log_content_access }}{% endif %}
+        {% if dt_user is defined %} USER={{ dt_user }}{% endif %}
+        {% if dt_group is defined %} GROUP={{ dt_group }}{% endif %}
+        {% if install_path is defined %} INSTALL_PATH={{ install_path }}{% endif %}
+      when: ansible_architecture != "armv7l" and installed.stat.exists == False
+    -
+      name: "update: execute oneagent install file with root privileges"
+      shell: "pbrun bash /tmp/dynatrace-oneagent-linux-latest.sh --set-host-group={{ dt_host_group }} --set-app-log-content-access={{ dt_app_log_content_access }}{% if dt_infra_only is defined %} --set-infra-only={{ dt_infra_only }}{% endif %}"
+      when: ansible_architecture != "armv7l" and installed.stat.exists == True
